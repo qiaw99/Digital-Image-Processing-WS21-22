@@ -11,6 +11,10 @@ Dip1.h
 /home/qiaw99/Downloads/dip01/Dip1.h
 stdexcept
 -
+stdint.h
+-
+math.h
+-
 
 /home/qiaw99/Downloads/dip01/Dip1.h
 opencv2/opencv.hpp

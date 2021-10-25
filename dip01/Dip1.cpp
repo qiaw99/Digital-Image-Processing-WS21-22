@@ -9,6 +9,8 @@
 #include "Dip1.h"
 
 #include <stdexcept>
+#include <stdint.h>
+#include <math.h>
 
 namespace dip1 {
 
@@ -19,9 +21,22 @@ namespace dip1 {
  * @returns output image
  */
 cv::Mat doSomethingThatMyTutorIsGonnaLike(const cv::Mat& img) {
+    /*
+    // 1. Detect edges
     cv::Mat result;
     cv::Canny(img, result, 30, 200);
     return result;
+    */
+
+    // 2. Invert the original image
+    cv::Mat res;
+    res = img.clone();
+    for(int i = 0; i < res.rows; i++){
+        for(int j = 0; j < res.cols; j++){
+            res.at<uint32_t>(i,j) = pow(2, 32) - 1 - res.at<uint32_t>(i,j);
+        }
+    }
+    return res;
 }
 
 
