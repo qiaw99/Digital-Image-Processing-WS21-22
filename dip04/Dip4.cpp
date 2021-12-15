@@ -93,37 +93,35 @@ cv::Mat_<float> IDFTComplex2Real(const cv::Mat_<std::complex<float>>& input)
 */
 cv::Mat_<float> circShift(const cv::Mat_<float>& in, int dx, int dy)
 {
-    Mat dst(in.size(), CV_32FC1);
-	int x, y;
+    // Reused from the 3rd exercise
+    Mat_<float> res = Mat::zeros(in.size(), in.type());
+	Mat_<float> src = in.clone();
+	int cols = src.cols;
+	int rows = src.rows;
+    int x, y = 0;
 
-	if (dx == 0 && dy == 0)
-		return in;
-	if (dx >= 0)
-		x = dx % in.cols;
-	else
-		x = dx % in.cols + in.cols;
-	if (dy >= 0)
-		y = dy % in.rows;
-	else
-		y = dy % in.rows + in.rows;
+	for (int i = 0; i < rows; i++) {
+		for (int j = 0; j < cols; j++) {
+            x = i+dx;
+            y = j+dy;
+            if(x < 0){
+                x += rows;
+            }
+            if(x >= rows){
+                x -= rows;
+            }
+            if(y < 0){
+                y += cols;
+            }
+            if(y >= cols){
+                y -= cols;
+            }
 
-	Mat tmp0, tmp1, tmp2, tmp3;
-	Mat part0(in, Rect(0, 0, in.cols - x, in.rows - y));
-	Mat part1(in, Rect(in.cols - x, 0, x, in.rows - y));
-	Mat part2(in, Rect(0, in.rows - y, in.cols - x, y));
-	Mat part3(in, Rect(in.cols - x, in.rows - y, x, y));
+			res.at<float>(x, y) = src.at<float>(i, j);
+		}
+	}
 
-	part0.copyTo(tmp0);
-	part1.copyTo(tmp1);
-	part2.copyTo(tmp2);
-	part3.copyTo(tmp3);
-
-	tmp0.copyTo(in(Rect(x, y, in.cols - x, in.rows - y)));
-	tmp1.copyTo(in(Rect(0, y, x, in.rows - y)));
-	tmp2.copyTo(in(Rect(x, 0, in.cols - x, y)));
-	tmp3.copyTo(in(Rect(0, 0, x, y)));
-
-	return in;
+	return res.clone();
 }
 
 
@@ -198,11 +196,14 @@ cv::Mat_<float> inverseFilter(const cv::Mat_<float>& degraded, const cv::Mat_<fl
 
     // Put kernel at origin
 	filter.copyTo(resized(Rect(0, 0, filter.cols, filter.rows)));
+	// cout << resized << endl;
 	resized = circShift(resized, -filter.cols/2, -filter.rows/2);
+    // cout << resized << endl;
 	in = DFTReal2Complex(in);
 	resized = DFTReal2Complex(resized);
 
     Mat_<complex<float>> inversed = computeInverseFilter(resized, eps);
+    // cout << inversed << endl;
     Mat_<complex<float>> img = applyFilter(in, inversed);
 
     Mat_<float> res = IDFTComplex2Real(img);
