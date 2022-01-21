@@ -7,11 +7,9 @@
 //============================================================================
 
 #include "Dip5.h"
-#include <math.h>
-using namespace cv;
+
 using namespace std;
-
-
+using namespace cv;
 namespace dip5 {
 
 
@@ -22,7 +20,7 @@ namespace dip5 {
 */
 cv::Mat_<float> createGaussianKernel1D(float sigma)
 {
-    unsigned kSize = getOddKernelSizeForSigma(sigma);
+	unsigned kSize = getOddKernelSizeForSigma(sigma);
     float mean = (kSize - 1) / 2;
 
     Mat_<float> kernel = Mat::zeros(Size(kSize, 1), CV_64FC1);
@@ -40,28 +38,71 @@ cv::Mat_<float> createGaussianKernel1D(float sigma)
     return kernel.clone();
 }
 
+cv::Mat_<float> getBorderedImage(const cv::Mat_<float> &src, int rowMiddle, int colMiddle)
+	{
+		cv::Mat_<float> borderedSrc = cv::Mat::ones(src.rows + (rowMiddle * 2),
+			src.cols + (colMiddle * 2),
+			CV_32FC1);
+		for (unsigned i = 0; i < src.rows; i++) {
+			for (unsigned j = 0; j < src.cols; j++) {
+				borderedSrc.at<float>(i + rowMiddle, j + colMiddle) = src(i, j);
+			}
+		}
+		return borderedSrc.clone();
+	}
+
+
 cv::Mat_<float> spatialConvolution(const cv::Mat_<float>& src, const cv::Mat_<float>& kernel)
 {
-    // Reused from 2nd. exercise
-    Mat_<float> res = src.clone();
-    int k = kernel.cols / 2;
-    Mat_<float> padding(src.rows + k*2, src.cols + k*2, src.depth());
-    copyMakeBorder(src, padding, k, k, k, k, BORDER_REPLICATE);
+    cv::Mat_<float> result = cv::Mat::zeros(src.size(), src.type());
+	cv::Mat_<float> tempKernel = cv::Mat::zeros(kernel.size(), kernel.type());
+	int colMiddle, rowMiddle;
+	int row, col, i, j;
+	double sum = 0;
+	colMiddle = ((kernel.cols - 1) / 2);
+	rowMiddle = ((kernel.rows - 1) / 2);
 
-    flip(kernel, kernel, -1);
-    for (int y = k; y < padding.rows-k; y++){
-        for (int x = k; x < padding.cols-k; x++){
-            float conv = 0;
-            for (int j = 0; j < kernel.rows; j++){
-                for (int i = 0; i < kernel.cols; i++){
-                    conv += padding.at<float>(y - (kernel.rows/2) + j, x - (kernel.cols/2) + i)*kernel.at<float>(j, i);
-                }
-            }
-            res.at<float>(y-k, x-k) = conv;
-        }
-    }
-    return res;
+	/*flip columns*/
+	for (row = 0; row < kernel.rows; row++) {
+		for (col = 0; col < kernel.cols; col++) {
+			if ((col != colMiddle) && (col < colMiddle)){
+				tempKernel[row][col] = kernel[row][kernel.cols - 1 - col];
+				tempKernel[row][kernel.cols - 1 - col] = kernel[row][col];
+			} else if(col == colMiddle){
+				tempKernel[row][col] = kernel[row][col];
+			}
+		}
+	}
+
+	/*flip rows*/
+	for (col = 0; col < kernel.cols; col++) {
+		for (row = 0; row < kernel.rows; row++) {
+			if ((row != rowMiddle) && (row < rowMiddle)){
+				tempKernel[row][col] = tempKernel[kernel.rows - 1 - row][col];
+				tempKernel[kernel.rows - 1 - row][col] = tempKernel[row][col];
+			}else if (row == rowMiddle){
+				tempKernel[row][col] = tempKernel[row][col];
+			}
+		}
+	}
+
+	cv::Mat_<float> bordered_src = getBorderedImage(src, rowMiddle, colMiddle);
+
+	// Go through the image
+	for (unsigned i = rowMiddle; i < src.rows + rowMiddle; i++) {
+		for (unsigned j = colMiddle; j < src.cols + colMiddle; j++) {
+			// Convolve
+			sum = 0.0f;
+			for (unsigned r = i - rowMiddle; r <= i + rowMiddle; r++)
+				for (unsigned c = j - colMiddle; c <= j + colMiddle; c++)
+					sum += bordered_src(r, c) * tempKernel(r - i + rowMiddle, c - j + colMiddle);
+			result.at<float>(i - rowMiddle, j - colMiddle) = sum;
+		}
+	}
+
+	return result;
 }
+
 
 /**
 * @brief Convolution in spatial domain by seperable filters
@@ -87,18 +128,17 @@ cv::Mat_<float> separableFilter(const cv::Mat_<float>& src, const cv::Mat_<float
  */
 cv::Mat_<float> createFstDevKernel1D(float sigma)
 {
-    unsigned kSize = getOddKernelSizeForSigma(sigma);
-    Mat_<float> gaussianKernel = createGaussianKernel1D(sigma);
+    int kSize = getOddKernelSizeForSigma(sigma);
+	float factor1, factor2;
+	cv::Mat_<float> result = cv::Mat_<float>::zeros(1, kSize);
 
-    float temp = 0.0;
-    float inter = 0.0;
-    for(int i = 0; i < kSize; i++){
-        temp = gaussianKernel.at<float>(0, i);
-        inter = -temp / (2 * CV_PI * pow(sigma, 4)) * exp(-pow(temp, 2) / (2 * pow(sigma, 2)));
-        gaussianKernel.at<float>(0, i) = inter;
-    }
-
-    return gaussianKernel;
+	for (int i = -kSize/2; i <= kSize/2; i++) {
+		factor1 = -i / (2 * CV_PI * pow(sigma, 4));
+		float temp = pow(i, 2) / (2 * pow(sigma, 2));
+		factor2 = exp(-temp);
+		result.at<float>(0, i+kSize/2) = factor1 * factor2;
+	}
+    return result;
 }
 
 
@@ -112,13 +152,12 @@ cv::Mat_<float> createFstDevKernel1D(float sigma)
 void calculateDirectionalGradients(const cv::Mat_<float>& img, float sigmaGrad,
                             cv::Mat_<float>& gradX, cv::Mat_<float>& gradY)
 {
-    gradX.create(img.rows, img.cols);
-    gradY.create(img.rows, img.cols);
-    Mat_<float> gaussianKernel = createGaussianKernel1D(sigmaGrad);
-    Mat_<float> gaussianKernelDerivative = createFstDevKernel1D(sigmaGrad);
-
-    gradX = separableFilter(img, gaussianKernelDerivative, gaussianKernel);
-    gradY = separableFilter(img, gaussianKernel, gaussianKernelDerivative);
+	gradX.create(img.rows, img.cols);
+	gradY.create(img.rows, img.cols);
+	cv::Mat_<float> kernelGauss		= createGaussianKernel1D(sigmaGrad);
+	cv::Mat_<float> kernelGaussDev	= createFstDevKernel1D(sigmaGrad);
+	gradX = separableFilter(img, kernelGaussDev, kernelGauss);
+	gradY = separableFilter(img, kernelGauss, kernelGaussDev);
 }
 
 /**
@@ -133,7 +172,7 @@ void calculateDirectionalGradients(const cv::Mat_<float>& img, float sigmaGrad,
 void calculateStructureTensor(const cv::Mat_<float>& gradX, const cv::Mat_<float>& gradY, float sigmaNeighborhood,
                             cv::Mat_<float>& A00, cv::Mat_<float>& A01, cv::Mat_<float>& A11)
 {
-    A00.create(gradX.rows, gradX.cols);
+	A00.create(gradX.rows, gradX.cols);
     A01.create(gradX.rows, gradX.cols);
     A11.create(gradX.rows, gradX.cols);
 
@@ -177,33 +216,39 @@ void calculateFoerstnerWeightIsotropy(const cv::Mat_<float>& A00, const cv::Mat_
  * @param img The greyscale input image
  * @param sigmaGrad The standard deviation of the Gaussian kernel for the directional gradients
  * @param sigmaNeighborhood The standard deviation of the Gaussian kernel for computing the "neighborhood summation" of the structure tensor.
- * @param fractionalMinWeight Threshold on the weight as a fraction of the mean of all locally maximal weights.
+ * @param minWeight Threshold on the weight as a fraction of the mean of all locally maximal weights.
  * @param minIsotropy Threshold on the isotropy of interest points.
  * @returns List of interest point locations.
  */
 std::vector<cv::Vec2i> getFoerstnerInterestPoints(const cv::Mat_<float>& img, float sigmaGrad, float sigmaNeighborhood, float fractionalMinWeight, float minIsotropy)
 {
-    Mat_<float> gradX, gradY, A00, A11, A01, weight, isotropy;
-    vector<cv::Vec2i> res;
 
-    calculateDirectionalGradients(img, sigmaGrad, gradX, gradY);
-    calculateStructureTensor(gradX, gradY, sigmaNeighborhood, A00, A01, A11);
-    calculateFoerstnerWeightIsotropy(A00, A01, A11, weight, isotropy);
-    for(int i = 0; i < weight.rows; i++){
-        for(int j = 0; j < weight.cols; j++){
-            if(weight.at<float>(i, j) > fractionalMinWeight){
-                if(isotropy.at<float>(i, j) > minIsotropy){
-                    if(isLocalMaximum(weight, j, i)){
-                        res.push_back(Vec2i(j, i));
-                    }
-                }
-            }
-        }
-    }
+	cv::Mat_<float> gradX, gradY, A00, A11, A01, weight, isotropy;
+	vector<cv::Vec2i> keyPoints;
+	float meanWeight;
 
-    return res;
+	calculateDirectionalGradients(img, sigmaGrad, gradX, gradY);
+	calculateStructureTensor(gradX, gradY, sigmaNeighborhood, A00, A01, A11);
+	calculateFoerstnerWeightIsotropy(A00, A01, A11, weight, isotropy);
+
+	cv::Scalar myMatMean	= mean(weight);
+	meanWeight				= myMatMean.val[0];
+
+	for (int c = 0; c < weight.cols; c++)
+	{
+		for (int r = 0; r < weight.rows; r++)
+		{
+			if ((weight.at<float>(r, c) > (fractionalMinWeight*meanWeight)) &&
+				(isotropy.at<float>(r, c) > minIsotropy) &&
+				isLocalMaximum(weight, c, r)){
+
+				cv::Vec2i kp = cv::Vec2i(c, r);
+				keyPoints.emplace_back(kp);
+			}
+		}
+	}
+    return keyPoints;
 }
-
 
 
 /* *****************************
