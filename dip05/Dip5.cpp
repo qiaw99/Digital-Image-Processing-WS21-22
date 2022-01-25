@@ -277,3 +277,4 @@ bool isLocalMaximum(const cv::Mat_<float>& weight, int x, int y)
 }
 
 }
+
